@@ -266,7 +266,7 @@ class LimeNQRController(SpectrometerController):
         lime.TX_matching = int(self.limenqr.model.settings.tx_matching)
         lime.RX_matching = int(self.limenqr.model.settings.rx_matching)
         lime.frq = self.limenqr.model.target_frequency - self.limenqr.model.if_frequency
-        lime.rectime_secs = self.limenqr.model.settings.acquisition_time
+        lime.rectime_secs = float(self.limenqr.model.settings.acquisition_time)
         
         c3_tim[0] = self.limenqr.model.settings.gate_enable
         c3_tim[1] = self.limenqr.model.settings.gate_padding_left

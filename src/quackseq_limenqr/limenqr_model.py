@@ -113,12 +113,11 @@ class LimeNQRModel(SpectrometerModel):
         self.add_setting("if_frequency", if_frequency_setting)
         self.if_frequency = 5e6
 
-        acquisition_time_setting = FloatSetting(
+        acquisition_time_setting = StringSetting(
             self.ACQUISITION_TIME,
             self.ACQUISITION,
             82e-6,
             "Acquisition time - this is from the beginning of the pulse sequence",
-            min_value=0,
         )
         self.add_setting("acquisition_time", acquisition_time_setting)
 
@@ -309,7 +308,7 @@ class LimeNQRModel(SpectrometerModel):
         self.add_setting("rx_phase_adjustment", rx_phase_adjustment_setting)
 
         # Signal Processing settings
-        rx_offset_setting = FloatSetting(
+        rx_offset_setting = StringSetting(
             self.RX_OFFSET,
             self.SIGNAL_PROCESSING,
             2.4e-6,
