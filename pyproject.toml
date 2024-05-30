@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[project]
+name = "quackseq-limenqr"
+version = "0.0.1"
+authors = [
+  { name="jupfi", email="support@nqrduck.cool" },
+]
+
+description = "Simple Python script to perform magnetic resonance spectroscopy experiments with the LimeSDR."
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.10"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "numpy",
+    "scipy",
+    "limedriver",
+    "quackseq",
+    "h5py",
+    "pyserial",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "pydocstyle",
+    "pyupgrade",
+    "ruff",
+]
+
+[tool.ruff]
+
+[tool.ruff.lint]
+extend-select = [
+  "UP",  # pyupgrade
+  "D",   # pydocstyle
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[project.urls]
+"Homepage" = "https://nqrduck.cool"
+"Bug Tracker" = "https://github.com/nqrduck/quackseq/issues"
+"Source Code" = "https://github.com/nqrduck/quackseq"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/quackseq_limenqr"]
