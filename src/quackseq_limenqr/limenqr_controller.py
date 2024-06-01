@@ -28,9 +28,8 @@ class LimeNQRController(SpectrometerController):
         super().__init__()
         self.limenqr = limenqr
 
-    def run_sequence(self, sequence : QuackSequence):
+    def run_sequence(self, sequence: QuackSequence):
         """Starts the measurement procedure."""
-
         lime = self.initialize_lime(sequence)
         if lime is None:
             # Emit error message
@@ -43,7 +42,6 @@ class LimeNQRController(SpectrometerController):
 
         self.setup_lime_parameters(lime, sequence)
         self.setup_temporary_storage(lime)
-
 
         if not self.perform_measurement(lime):
             self.emit_status_message("Measurement failed")
@@ -80,7 +78,7 @@ class LimeNQRController(SpectrometerController):
         if measurement_data:
             return measurement_data
 
-    def initialize_lime(self, sequence : QuackSequence) -> PyLimeConfig:
+    def initialize_lime(self, sequence: QuackSequence) -> PyLimeConfig:
         """Initializes the limr object that is used to communicate with the pulseN driver.
 
         Returns:
@@ -100,11 +98,14 @@ class LimeNQRController(SpectrometerController):
 
         return None
 
-    def setup_lime_parameters(self, lime: PyLimeConfig, sequence : QuackSequence) -> None:
+    def setup_lime_parameters(
+        self, lime: PyLimeConfig, sequence: QuackSequence
+    ) -> None:
         """Sets the parameters of the lime config according to the settings set in the spectrometer module.
 
         Args:
             lime (PyLimeConfig): The PyLimeConfig object that is used to communicate with the pulseN driver
+            sequence (QuackSequence): The pulse sequence to run
         """
         # lime.noi = -1
         lime.override_init = -1
@@ -144,11 +145,14 @@ class LimeNQRController(SpectrometerController):
             logger.error("Failed to execute the measurement: %s", e)
             return False
 
-    def process_measurement_results(self, lime: PyLimeConfig, sequence : QuackSequence) -> Measurement:
+    def process_measurement_results(
+        self, lime: PyLimeConfig, sequence: QuackSequence
+    ) -> Measurement:
         """Processes the measurement results and returns a Measurement object.
 
         Args:
             lime (PyLimeConfig): The PyLimeConfig object that is used to communicate with the pulseN driver
+            sequence (QuackSequence): The pulse sequence to run
 
         Returns:
             Measurement: The measurement data
@@ -267,7 +271,7 @@ class LimeNQRController(SpectrometerController):
         lime.RX_matching = int(self.limenqr.model.settings.rx_matching)
         lime.frq = self.limenqr.model.target_frequency - self.limenqr.model.if_frequency
         lime.rectime_secs = float(self.limenqr.model.settings.acquisition_time)
-        
+
         c3_tim[0] = self.limenqr.model.settings.gate_enable
         c3_tim[1] = self.limenqr.model.settings.gate_padding_left
         c3_tim[2] = self.limenqr.model.settings.gate_shift
@@ -275,7 +279,7 @@ class LimeNQRController(SpectrometerController):
 
         lime.TX_gain = self.limenqr.model.settings.tx_gain
         lime.RX_gain = self.limenqr.model.settings.rx_gain
-        lime.RX_LPF = self.limenqr.model.settings.rx_lpf_bw  
+        lime.RX_LPF = self.limenqr.model.settings.rx_lpf_bw
         lime.TX_LPF = self.limenqr.model.settings.tx_lpf_bw
         lime.TX_IcorrDC = self.limenqr.model.settings.tx_i_dc_correction
         lime.TX_QcorrDC = self.limenqr.model.settings.tx_q_dc_correction
@@ -290,11 +294,14 @@ class LimeNQRController(SpectrometerController):
         lime.c3_tim = c3_tim
         return lime
 
-    def translate_pulse_sequence(self, lime: PyLimeConfig, sequence : QuackSequence) -> PyLimeConfig:
-        """Ttranslates the pulse sequence to the limr object.
+    def translate_pulse_sequence(
+        self, lime: PyLimeConfig, sequence: QuackSequence
+    ) -> PyLimeConfig:
+        """Translates the pulse sequence to the limr object.
 
         Args:
             lime (PyLimeConfig): The PyLimeConfig object that is used to communicate with the pulseN driver
+            sequence (QuackSequence): The pulse sequence to run
         """
         events = sequence.events
 
@@ -342,7 +349,7 @@ class LimeNQRController(SpectrometerController):
         lime.Npulses = len(lime.p_frq)
         return lime
 
-    def get_number_of_pulses(self, sequence :  QuackSequence) -> int:
+    def get_number_of_pulses(self, sequence: QuackSequence) -> int:
         """Calculates the number of pulses in the pulse sequence before the LimeDriverBinding is initialized.
 
         This makes sure it"s initialized with the correct size of the pulse lists.
@@ -361,7 +368,6 @@ class LimeNQRController(SpectrometerController):
 
         return num_pulses
 
-
     def log_event_details(self, event) -> None:
         """Logs the details of an event."""
         logger.debug("Event %s has parameters: %s", event.name, event.parameters)
@@ -370,11 +376,12 @@ class LimeNQRController(SpectrometerController):
         """Logs the details of a parameter."""
         logger.debug("Parameter %s has options: %s", parameter.name, parameter.options)
 
-    def is_translatable_tx_parameter(self, parameter, sequence : QuackSequence) -> bool:
+    def is_translatable_tx_parameter(self, parameter, sequence: QuackSequence) -> bool:
         """Checks if a parameter a pulse with a transmit pulse shape (amplitude nonzero).
 
         Args:
             parameter (Parameter): The parameter to check
+            sequence (QuackSequence): The pulse sequence to run
         """
         return (
             parameter.name == sequence.TX_PULSE
@@ -530,7 +537,7 @@ class LimeNQRController(SpectrometerController):
         return blank_durations
 
     # This method could be refactored in a potential pulse sequence module
-    def get_previous_events_without_tx_pulse(self, events, current_event) -> list:
+    def get_previous_events_without_tx_pulse(self, events : list, current_event : "Event") -> list:
         """This method returns the previous events without a transmit pulse.
 
         Args:
@@ -556,11 +563,12 @@ class LimeNQRController(SpectrometerController):
             result
         )  # Reversed to maintain the original order if needed elsewhere
 
-    def translate_rx_event(self, lime: PyLimeConfig, sequence : QuackSequence) -> tuple:
+    def translate_rx_event(self, lime: PyLimeConfig, sequence: QuackSequence) -> tuple:
         """This method translates the RX event of the pulse sequence to the limr object.
 
         Args:
             lime (PyLimeConfig): The PyLimeConfig object that is used to communicate with the pulseN driver
+            sequence (QuackSequence): The pulse sequence to run
 
         Returns:
             tuple: A tuple containing the start and stop time of the RX event in µs
@@ -626,4 +634,3 @@ class LimeNQRController(SpectrometerController):
             float: The offset for the RX event
         """
         return self.limenqr.model.OFFSET_FIRST_PULSE * (1 / lime.srate)
-

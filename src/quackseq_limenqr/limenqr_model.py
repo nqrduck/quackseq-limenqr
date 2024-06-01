@@ -325,7 +325,7 @@ class LimeNQRModel(SpectrometerModel):
         self.target_frequency = 100e6
 
     @property
-    def target_frequency(self):
+    def target_frequency(self) -> float:
         """The target frequency of the spectrometer."""
         return self._target_frequency
 
@@ -334,7 +334,7 @@ class LimeNQRModel(SpectrometerModel):
         self._target_frequency = value
 
     @property
-    def averages(self):
+    def averages(self) -> int:
         """The number of averages to be taken."""
         return self._averages
 
@@ -343,7 +343,7 @@ class LimeNQRModel(SpectrometerModel):
         self._averages = value
 
     @property
-    def if_frequency(self):
+    def if_frequency(self) -> float:
         """The intermediate frequency to which the input signal is down converted during analog-to-digital conversion."""
         return self._if_frequency
 

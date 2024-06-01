@@ -48,16 +48,13 @@ extend-select = [
   "D",   # pydocstyle
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
-
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [project.urls]
 "Homepage" = "https://nqrduck.cool"
-"Bug Tracker" = "https://github.com/nqrduck/quackseq/issues"
-"Source Code" = "https://github.com/nqrduck/quackseq"
+"Bug Tracker" = "https://github.com/nqrduck/quackseq-limenqr/issues"
+"Source Code" = "https://github.com/nqrduck/quackseq-limenqr"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quackseq_limenqr"]
