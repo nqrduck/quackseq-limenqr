@@ -60,12 +60,12 @@ class LimeNQRController(SpectrometerController):
         logger.debug(f"Last tdx value: {measurement_data.tdx[-1]}")
 
         if dwell_time:
-            n_data_points = int(measurement_data.tdx[-1] / dwell_time)
+            n_data_points = int(measurement_data.tdx[-1][-1] / dwell_time)
             logger.debug("Resampling to %s data points", n_data_points)
             tdx = np.linspace(
-                0, measurement_data.tdx[-1], n_data_points, endpoint=False
+                0, measurement_data.tdx[-1][-1], n_data_points, endpoint=False
             )
-            tdy = resample(measurement_data.tdy, n_data_points)
+            tdy = resample(measurement_data.tdy[-1], n_data_points)
             name = measurement_data.name
             measurement_data = Measurement(
                 name,
@@ -578,6 +578,7 @@ class LimeNQRController(SpectrometerController):
         events = sequence.events
 
         rx_event = self.find_rx_event(events)
+        logger.debug("Found RX event: %s", rx_event)
         if not rx_event:
             return None, None
 
