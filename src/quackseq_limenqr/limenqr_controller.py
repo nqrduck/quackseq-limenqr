@@ -577,7 +577,7 @@ class LimeNQRController(SpectrometerController):
 
         events = sequence.events
 
-        rx_event = self.find_rx_event(events)
+        rx_event = self.find_rx_event(sequence, events)
         logger.debug("Found RX event: %s", rx_event)
         if not rx_event:
             return None, None
@@ -595,21 +595,24 @@ class LimeNQRController(SpectrometerController):
         rx_stop = rx_begin + rx_duration
         return rx_begin * 1e6, rx_stop * 1e6
 
-    def find_rx_event(self, events):
+    def find_rx_event(self, sequence, events):
         """This method finds the RX event in the pulse sequence.
 
         Args:
+            sequence (QuackSequence): The pulse sequence to run
             events (list): The pulse sequence events
 
         Returns:
             Event: The RX event
         """
         for event in events:
-            parameter = event.parameters.get(RXReadout.RX)
-            if parameter and parameter.get_option_by_name(RXReadout.RX).value:
-                self.log_event_details(event)
-                self.log_parameter_details(parameter)
-                return event
+            for parameter in event.parameters.values():
+                logger.debug(f"Event: {event.name}")
+                logger.debug(f"Parameter: {parameter}")
+                if parameter.name == sequence.RX_READOUT and parameter.get_option_by_name(RXReadout.RX).value:
+                    self.log_event_details(event)
+                    self.log_parameter_details(parameter)
+                    return event
         return None
 
     def calculate_previous_events_duration(self, events, rx_event):
