@@ -330,7 +330,7 @@ class LimeNQRController(SpectrometerController):
                             pulse_amplitude, pulse_shape, modulated_phase
                         )
                         pof_ext = self.calculate_and_set_offsets(
-                            lime, pulse_shape, events, event, pulse_amplitude
+                            lime, pulse_shape, events, event, pulse_amplitude, sequence
                         )
 
                         pfr.extend(pfr_ext)
@@ -486,7 +486,7 @@ class LimeNQRController(SpectrometerController):
         return pfr, pdr, pam, pph
 
     def calculate_and_set_offsets(
-        self, lime: PyLimeConfig, pulse_shape, events, current_event, pulse_amplitude
+        self, lime: PyLimeConfig, pulse_shape, events, current_event, pulse_amplitude, sequence
     ) -> list:
         """This method calculates and sets the offsets for the limr object.
 
@@ -496,11 +496,12 @@ class LimeNQRController(SpectrometerController):
             events (list): The pulse sequence events
             current_event (Event): The current event
             pulse_amplitude (float): The pulse amplitude
+            sequence (QuackSequence): The pulse sequence to run
 
         Returns:
             list: The offsets for the limr object
         """
-        blank_durations = self.get_blank_durations_before_event(events, current_event)
+        blank_durations = self.get_blank_durations_before_event(events, current_event, sequence)
 
         # Calculate the total time that has passed before the current event
         total_blank_duration = sum(blank_durations)
@@ -518,31 +519,35 @@ class LimeNQRController(SpectrometerController):
         return pof
 
     # This method could be refactored in a potential pulse sequence module
-    def get_blank_durations_before_event(self, events, current_event) -> list:
+    def get_blank_durations_before_event(self, events, current_event, sequence) -> list:
         """This method returns the blank durations before the current event.
 
         Args:
             events (list): The pulse sequence events
             current_event (Event): The current event
+            sequence (QuackSequence): The pulse sequence to run
 
         Returns:
             list: The blank durations before the current event
         """
         blank_durations = []
         previous_events_without_tx_pulse = self.get_previous_events_without_tx_pulse(
-            events, current_event
+            events, current_event, sequence
         )
         for event in previous_events_without_tx_pulse:
             blank_durations.append(float(event.duration))
         return blank_durations
 
     # This method could be refactored in a potential pulse sequence module
-    def get_previous_events_without_tx_pulse(self, events : list, current_event : "Event") -> list:
+    def get_previous_events_without_tx_pulse(
+        self, events: list, current_event: "Event", sequence: QuackSequence
+    ) -> list:
         """This method returns the previous events without a transmit pulse.
 
         Args:
             events (list): The pulse sequence events
             current_event (Event): The current event
+            sequence (QuackSequence): The pulse sequence to run
 
         Returns:
             list: The previous events without a transmit pulse
@@ -552,7 +557,7 @@ class LimeNQRController(SpectrometerController):
         result = []
         for event in reversed(previous_events):
             translatable = any(
-                self.is_translatable_tx_parameter(param)
+                self.is_translatable_tx_parameter(param, sequence)
                 for param in event.parameters.values()
             )
             if not translatable:
@@ -609,7 +614,10 @@ class LimeNQRController(SpectrometerController):
             for parameter in event.parameters.values():
                 logger.debug(f"Event: {event.name}")
                 logger.debug(f"Parameter: {parameter}")
-                if parameter.name == sequence.RX_READOUT and parameter.get_option_by_name(RXReadout.RX).value:
+                if (
+                    parameter.name == sequence.RX_READOUT
+                    and parameter.get_option_by_name(RXReadout.RX).value
+                ):
                     self.log_event_details(event)
                     self.log_parameter_details(parameter)
                     return event
