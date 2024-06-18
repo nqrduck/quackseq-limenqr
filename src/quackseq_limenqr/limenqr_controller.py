@@ -57,7 +57,10 @@ class LimeNQRController(SpectrometerController):
 
         dwell_time = UnitConverter.to_float(dwell_time) * 1e6
         logger.debug("Dwell time: %s", dwell_time)
-        logger.debug(f"Last tdx value: {measurement_data.tdx[-1]}")
+        if not measurement_data:
+            return None 
+        
+        logger.debug(f"Last tdx value: {measurement_data.tdx[-1][-1]}")
 
         if dwell_time:
             n_data_points = int(measurement_data.tdx[-1][-1] / dwell_time)
