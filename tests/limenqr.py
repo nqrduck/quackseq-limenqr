@@ -27,8 +27,8 @@ class TestQuackSequence(unittest.TestCase):
         seq.set_tx_amplitude(loopback, 100)
         seq.set_tx_phase(loopback, 0)
 
-        rect = SincFunction()
-        seq.set_tx_shape(loopback, rect)
+        sinc = SincFunction()
+        seq.set_tx_shape(loopback, sinc)
 
         seq.set_rx(loopback, True)
 
