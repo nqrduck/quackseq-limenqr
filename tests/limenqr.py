@@ -45,9 +45,9 @@ class TestQuackSequence(unittest.TestCase):
 
         result = lime.run_sequence(seq)
 
-        plt.plot(result.tdx, result.tdy.imag)
-        plt.plot(result.tdx, result.tdy.real)
-        plt.plot(result.tdx, np.abs(result.tdy))
+        plt.plot(result.tdx[-1], result.tdy[-1].imag)
+        plt.plot(result.tdx[-1], result.tdy[-1].real)
+        plt.plot(result.tdx[-1], np.abs(result.tdy[-1]))
         plt.show()
 
 

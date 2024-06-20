@@ -28,17 +28,18 @@ class LimeNQRController(SpectrometerController):
         super().__init__()
         self.limenqr = limenqr
 
-    def run_sequence(self, sequence: QuackSequence):
+    def run_sequence(self, sequence: QuackSequence) -> Measurement:
         """Starts the measurement procedure."""
         lime = self.initialize_lime(sequence)
         if lime is None:
             # Emit error message
             logger.error("Error initializing Lime driver")
-            return -1
+            return None
+
         elif lime.Npulses == 0:
             # Emit error message
             logger.error("No pulses in the pulse sequence")
-            return -1
+            return None
 
         self.setup_lime_parameters(lime, sequence)
         self.setup_temporary_storage(lime)
@@ -52,18 +53,22 @@ class LimeNQRController(SpectrometerController):
 
         measurement_data = self.process_measurement_results(lime, sequence)
 
+        if not measurement_data:
+            return None
+        
+
         # Resample the RX data to the dwell time settings
         dwell_time = self.limenqr.model.settings.rx_dwell_time
 
         dwell_time = UnitConverter.to_float(dwell_time) * 1e6
         logger.debug("Dwell time: %s", dwell_time)
-        logger.debug(f"Last tdx value: {measurement_data.tdx[-1]}")
+        logger.debug(f"Last tdx value: {measurement_data.tdx[-1][-1]}")
 
         if dwell_time:
-            n_data_points = int(measurement_data.tdx[-1] / dwell_time)
+            n_data_points = int(measurement_data.tdx[-1][-1] / dwell_time)
             logger.debug("Resampling to %s data points", n_data_points)
             tdx = np.linspace(
-                0, measurement_data.tdx[-1], n_data_points, endpoint=False
+                0, measurement_data.tdx[-1][-1], n_data_points, endpoint=False
             )
             tdy = resample(measurement_data.tdy, n_data_points)
             name = measurement_data.name
