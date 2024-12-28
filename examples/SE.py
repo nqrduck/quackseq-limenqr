@@ -37,7 +37,7 @@ if __name__ == "__main__":
     result = lime.run_sequence(seq)
 
     # Plot the results
-    plt.plot(result.tdx[-1], result.tdy[-1].imag)
-    plt.plot(result.tdx[-1], result.tdy[-1].real)
-    plt.plot(result.tdx[-1], abs(result.tdy[-1]))
+    plt.plot(result.tdx, result.tdy[:, -1].imag)
+    plt.plot(result.tdx, result.tdy[:, -1].real)
+    plt.plot(result.tdx, abs(result.tdy[:, -1]))
     plt.show()

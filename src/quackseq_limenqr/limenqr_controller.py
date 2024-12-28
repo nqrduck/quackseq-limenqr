@@ -51,40 +51,23 @@ class LimeNQRController(SpectrometerController):
             )
             return -1
 
+        n_phase_cycles = sequence.get_n_phase_cycles()
+        logger.debug("Expecting %s phase cycles", n_phase_cycles)
+
+        # We get a list of measurements, one for each phase cycle
         measurement_data = self.process_measurement_results(lime, sequence)
 
-        if not measurement_data:
+        # We resample the data to the dwell time settings
+        # measurements = self.resample_data(measurements)
+
+        # Check if the measurement data is valid - the +1 comes from the summing of the phase cycles
+        if n_phase_cycles > 1 and measurement_data.tdy.shape[1] != n_phase_cycles + 1:
+            self.emit_status_message("Error processing measurement data")
             return None
         
+        logger.debug(f"Measurement data shape: {measurement_data.tdy.shape}")
 
-        # Resample the RX data to the dwell time settings
-        dwell_time = self.limenqr.model.settings.rx_dwell_time
-
-        dwell_time = UnitConverter.to_float(dwell_time) * 1e6
-        logger.debug("Dwell time: %s", dwell_time)
-        if not measurement_data:
-            return None 
-        
-        logger.debug(f"Last tdx value: {measurement_data.tdx[-1][-1]}")
-
-        if dwell_time:
-            n_data_points = int(measurement_data.tdx[-1][-1] / dwell_time)
-            logger.debug("Resampling to %s data points", n_data_points)
-            tdx = np.linspace(
-                0, measurement_data.tdx[-1][-1], n_data_points, endpoint=False
-            )
-            tdy = resample(measurement_data.tdy[-1], n_data_points)
-            name = measurement_data.name
-            measurement_data = Measurement(
-                name,
-                tdx,
-                tdy,
-                self.limenqr.model.target_frequency,
-                IF_frequency=self.limenqr.model.if_frequency,
-            )
-
-        if measurement_data:
-            return measurement_data
+        return measurement_data
 
     def initialize_lime(self, sequence: QuackSequence) -> PyLimeConfig:
         """Initializes the limr object that is used to communicate with the pulseN driver.
@@ -165,17 +148,17 @@ class LimeNQRController(SpectrometerController):
         Returns:
             Measurement: The measurement data
         """
-        rx_begin, rx_stop = self.translate_rx_event(lime, sequence)
+        rx_begin, rx_stop, readout_scheme = self.translate_rx_event(lime, sequence)
         if rx_begin is None or rx_stop is None:
             # Instead print the whole acquisition range
             rx_begin = 0
             rx_stop = lime.rectime_secs * 1e6
 
         logger.debug("RX event begins at: %sµs and ends at: %sµs", rx_begin, rx_stop)
-        return self.calculate_measurement_data(lime, rx_begin, rx_stop)
+        return self.calculate_measurement_data(lime, rx_begin, rx_stop, readout_scheme)
 
     def calculate_measurement_data(
-        self, lime: PyLimeConfig, rx_begin: float, rx_stop: float
+        self, lime: PyLimeConfig, rx_begin: float, rx_stop: float, readout_scheme: list
     ) -> Measurement:
         """Calculates the measurement data from the limr object.
 
@@ -183,6 +166,7 @@ class LimeNQRController(SpectrometerController):
             lime (PyLimeConfig): The PyLimeConfig object that is used to communicate with the pulseN driver
             rx_begin (float): The start time of the RX event in µs
             rx_stop (float): The stop time of the RX event in µs
+            readout_scheme (list): The readout for phase cycling
 
         Returns:
             Measurement: The measurement data
@@ -190,13 +174,17 @@ class LimeNQRController(SpectrometerController):
         try:
             path = lime.get_path()
             hdf = HDF(path)
+            logger.debug(
+                f"HDF file has size: hdf.tdx.shape = {hdf.tdx.shape} and hdf.tdy.shape = {hdf.tdy.shape}"
+            )
             evidx = self.find_evaluation_range_indices(hdf, rx_begin, rx_stop)
             tdx, tdy = self.extract_measurement_data(lime, hdf, evidx)
             fft_shift = self.get_fft_shift()
             # Measurement name date + module + target frequency + averages + sequence name
             name = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - LimeNQR - {self.limenqr.model.target_frequency / 1e6} MHz - {self.limenqr.model.averages} averages"
             logger.debug(f"Measurement name: {name}")
-            return Measurement(
+
+            measurement = Measurement(
                 name,
                 tdx,
                 tdy,
@@ -204,6 +192,24 @@ class LimeNQRController(SpectrometerController):
                 frequency_shift=fft_shift,
                 IF_frequency=self.limenqr.model.if_frequency,
             )
+
+            logger.debug(f"Readout scheme: {readout_scheme}")
+
+            for i, readout_phase in enumerate(readout_scheme):
+                logger.debug(f"Performing phase shift with phase: {readout_phase}")
+                measurement.phase_shift(readout_phase, index=i)
+
+            # Last measurement datapoint just sums up the phase cycles along the phase cycling dimension if the readout scheme is longer than one
+            if len(readout_scheme) > 1:
+                sum_tdy = np.sum(tdy, axis=1, keepdims=True)
+                logger.debug(f"measurement tdy shape: {measurement.tdy.shape}")
+                logger.debug(f"Summed tdy shape: {sum_tdy.shape}")
+                measurement.add_dataset(sum_tdy)
+
+            logger.debug(f"Measurement data tdy shape: {measurement.tdy.shape}")
+
+            return measurement
+
         except Exception as e:
             logger.error("Error processing measurement result: %s", e)
             return None
@@ -236,14 +242,16 @@ class LimeNQRController(SpectrometerController):
         Returns:
             tuple: A tuple containing the time vector and the measurement data
         """
+        # tdx is the same for all phase cycles
         tdx = hdf.tdx[indices] - hdf.tdx[indices][0]
+        # tdy has the shape (points, n_phase_cycles)
         tdy = hdf.tdy[indices] / lime.averages
-        # flatten the  tdy array
-        tdy = tdy.flatten()
+
+        logger.debug("tdy shape: %s", tdy.shape)
         return tdx, tdy
 
     def get_fft_shift(self) -> int:
-        """Rreturns the FFT shift value from the settings.
+        """Returns the FFT shift value from the settings.
 
         Returns:
             int: The FFT shift value
@@ -307,6 +315,19 @@ class LimeNQRController(SpectrometerController):
     ) -> PyLimeConfig:
         """Translates the pulse sequence to the limr object.
 
+        This  is the main method that translates the pulse sequence to the limr object. It iterates over the pulse sequence events and parameters and prepares the pulse lists for the limr object.
+
+        Description of variables:
+        pfr: Pulse frequency list
+        pdr: Pulse duration list
+        pam: Pulse amplitude list
+        pof: Pulse offset list
+        pph: Pulse phase list
+
+        Phase cycling  variables:
+        p_phacyc_N: Number of phase cycles
+        p_phacyc_lev: The phase cycle level. This indicates  how the loops are nested. If a pulse event is on the same level they need to have the same number of phase cycles.
+
         Args:
             lime (PyLimeConfig): The PyLimeConfig object that is used to communicate with the pulseN driver
             sequence (QuackSequence): The pulse sequence to run
@@ -321,11 +342,11 @@ class LimeNQRController(SpectrometerController):
                 self.log_parameter_details(parameter)
 
                 if self.is_translatable_tx_parameter(parameter, sequence):
-                    pulse_shape, pulse_amplitude = self.prepare_pulse_amplitude(
-                        event, parameter
+                    pulse_shape, pulse_amplitude, pulse_phase = (
+                        self.prepare_pulse_amplitude(event, parameter)
                     )
                     pulse_amplitude, modulated_phase = self.modulate_pulse_amplitude(
-                        pulse_amplitude, event, lime
+                        pulse_amplitude, pulse_phase, event, lime
                     )
 
                     if first_pulse:  # If the pulse frequency list is empty
@@ -333,6 +354,19 @@ class LimeNQRController(SpectrometerController):
                             lime, pulse_amplitude, pulse_shape, modulated_phase
                         )
                         first_pulse = False
+
+                        # Get the phase cycling parameters
+                        p_phacyc_N = parameter.get_option_by_name(
+                            parameter.N_PHASE_CYCLES
+                        )
+                        p_phacyc_lev = parameter.get_option_by_name(
+                            parameter.PHASE_CYCLE_GROUP
+                        )
+
+                        # Make the length of the phase cycling parameters equal to the length of the pulse amplitude
+                        p_phacyc_N = [p_phacyc_N.value] * len(pulse_amplitude)
+                        p_phacyc_lev = [p_phacyc_lev.value] * len(pulse_amplitude)
+
                     else:
                         pfr_ext, pdr_ext, pam_ext, pph_ext = self.extend_pulse_lists(
                             pulse_amplitude, pulse_shape, modulated_phase
@@ -347,11 +381,34 @@ class LimeNQRController(SpectrometerController):
                         pof.extend(pof_ext)
                         pph.extend(pph_ext)
 
+                        # Get the phase cycling parameters
+                        p_phacyc_N_ext = parameter.get_option_by_name(
+                            parameter.N_PHASE_CYCLES
+                        )
+
+                        p_phacyc_lev_ext = parameter.get_option_by_name(
+                            parameter.PHASE_CYCLE_GROUP
+                        )
+
+                        # Extend the phase cycling parameters by the length of the pulse amplitude
+                        p_phacyc_N_ext = [p_phacyc_N_ext.value] * len(pulse_amplitude)
+                        p_phacyc_lev_ext = [p_phacyc_lev_ext.value] * len(
+                            pulse_amplitude
+                        )
+
+                        p_phacyc_N.extend(p_phacyc_N_ext)
+                        p_phacyc_lev.extend(p_phacyc_lev_ext)
+
         lime.p_frq = pfr
         lime.p_dur = pdr
         lime.p_amp = pam
         lime.p_offs = pof
         lime.p_pha = pph
+
+        # Phase cycling
+        lime.p_phacyc_N = p_phacyc_N
+        lime.p_phacyc_lev = p_phacyc_lev
+
         # Set repetition time event as last event's duration and update number of pulses
         lime.reptime_secs = float(event.duration)
         lime.Npulses = len(lime.p_frq)
@@ -370,7 +427,9 @@ class LimeNQRController(SpectrometerController):
         for event in events:
             for parameter in event.parameters.values():
                 if self.is_translatable_tx_parameter(parameter, sequence):
-                    _, pulse_amplitude = self.prepare_pulse_amplitude(event, parameter)
+                    _, pulse_amplitude, _ = self.prepare_pulse_amplitude(
+                        event, parameter
+                    )
                     num_pulses += len(pulse_amplitude)
                     logger.debug("Number of pulses: %s", num_pulses)
 
@@ -404,7 +463,7 @@ class LimeNQRController(SpectrometerController):
             parameter (Parameter): The parameter that contains the pulse shape and amplitude
 
         Returns:
-        tuple: A tuple containing the pulse shape and the pulse amplitude
+            tuple: A tuple containing the pulse shape and the pulse amplitude and phase
         """
         pulse_shape = parameter.get_option_by_name(TXPulse.TX_PULSE_SHAPE).value
         pulse_amplitude = abs(pulse_shape.get_pulse_amplitude(event.duration)) * (
@@ -412,15 +471,18 @@ class LimeNQRController(SpectrometerController):
         )
         pulse_amplitude = np.clip(pulse_amplitude, -0.99, 0.99)
 
-        return pulse_shape, pulse_amplitude
+        pulse_phase = parameter.get_option_by_name(TXPulse.TX_PHASE).value
+
+        return pulse_shape, pulse_amplitude, pulse_phase
 
     def modulate_pulse_amplitude(
-        self, pulse_amplitude: float, event, lime: PyLimeConfig
+        self, pulse_amplitude: float, pulse_phase: float, event, lime: PyLimeConfig
     ) -> tuple:
         """Modulates the pulse amplitude for the limr object. We need to do this to have the pulse at IF frequency instead  of LO frequency.
 
         Args:
             pulse_amplitude (float): The pulse amplitude
+            pulse_phase (float): The pulse phase
             event (Event): The event that contains the parameter
             lime (PyLimeConfig) : The PyLimeConfig object that is used to communicate with the pulseN driver
 
@@ -430,7 +492,9 @@ class LimeNQRController(SpectrometerController):
         # num_samples = int(float(event.duration) * lime.sra)
         num_samples = int(float(event.duration) * lime.srate)
         tdx = np.linspace(0, float(event.duration), num_samples, endpoint=False)
-        shift_signal = np.exp(1j * 2 * np.pi * self.limenqr.model.if_frequency * tdx)
+        shift_signal = np.exp(
+            1j * 2 * np.pi * self.limenqr.model.if_frequency * tdx + pulse_phase
+        )
 
         # The pulse amplitude needs to be resampled to the number of samples
         logger.debug("Resampling pulse amplitude to %s samples", num_samples)
@@ -494,7 +558,13 @@ class LimeNQRController(SpectrometerController):
         return pfr, pdr, pam, pph
 
     def calculate_and_set_offsets(
-        self, lime: PyLimeConfig, pulse_shape, events, current_event, pulse_amplitude, sequence
+        self,
+        lime: PyLimeConfig,
+        pulse_shape,
+        events,
+        current_event,
+        pulse_amplitude,
+        sequence,
     ) -> list:
         """This method calculates and sets the offsets for the limr object.
 
@@ -509,7 +579,9 @@ class LimeNQRController(SpectrometerController):
         Returns:
             list: The offsets for the limr object
         """
-        blank_durations = self.get_blank_durations_before_event(events, current_event, sequence)
+        blank_durations = self.get_blank_durations_before_event(
+            events, current_event, sequence
+        )
 
         # Calculate the total time that has passed before the current event
         total_blank_duration = sum(blank_durations)
@@ -576,6 +648,7 @@ class LimeNQRController(SpectrometerController):
             result
         )  # Reversed to maintain the original order if needed elsewhere
 
+    # Overrides from SpectrometerController  because we need the offset
     def translate_rx_event(self, lime: PyLimeConfig, sequence: QuackSequence) -> tuple:
         """This method translates the RX event of the pulse sequence to the limr object.
 
@@ -606,7 +679,13 @@ class LimeNQRController(SpectrometerController):
             float(previous_events_duration) + float(offset) + float(CORRECTION_FACTOR)
         )
         rx_stop = rx_begin + rx_duration
-        return rx_begin * 1e6, rx_stop * 1e6
+
+        # Phase
+        readout_scheme = rx_event.parameters[sequence.RX_READOUT].get_option_by_name(
+            RXReadout.READOUT_SCHEME
+        ).get_value()[0]
+
+        return rx_begin * 1e6, rx_stop * 1e6, readout_scheme
 
     def find_rx_event(self, sequence, events):
         """This method finds the RX event in the pulse sequence.
@@ -654,3 +733,37 @@ class LimeNQRController(SpectrometerController):
             float: The offset for the RX event
         """
         return self.limenqr.model.OFFSET_FIRST_PULSE * (1 / lime.srate)
+
+    def resample_data(self, measurements: list):
+        """Resamples the data with the specified dwell time."""
+        # Resample the RX data to the dwell time settings
+        dwell_time = self.limenqr.model.settings.rx_dwell_time
+
+        dwell_time = UnitConverter.to_float(dwell_time) * 1e6
+        logger.debug("Dwell time: %s", dwell_time)
+
+        resampled_measurements = []
+
+        for measurement_data in measurements:
+            logger.debug(f"Last tdx value: {measurement_data.tdx[-1][-1]}")
+
+            if dwell_time:
+                n_data_points = int(measurement_data.tdx[-1][-1] / dwell_time)
+                logger.debug("Resampling to %s data points", n_data_points)
+                tdx = np.linspace(
+                    0, measurement_data.tdx[-1][-1], n_data_points, endpoint=False
+                )
+                tdy = resample(measurement_data.tdy[-1], n_data_points)
+                name = measurement_data.name
+                resampled_measurements.append(
+                    Measurement(
+                        name,
+                        tdx,
+                        tdy,
+                        measurement_data.target_frequency,
+                        frequency_shift=measurement_data.frequency_shift,
+                        IF_frequency=measurement_data.IF_frequency,
+                    )
+                )
+
+        return resampled_measurements
