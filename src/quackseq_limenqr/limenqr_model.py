@@ -69,13 +69,13 @@ class LimeNQRModel(SpectrometerModel):
         )
         self.add_setting("channel", channel_setting)
 
-        tx_matching_options = ["0", "1"]
+        tx_matching_options = ["0", "1", "2", "3", "4"]
         tx_matching_setting = SelectionSetting(
             self.TX_MATCHING, self.ACQUISITION, tx_matching_options, "0", "TX Matching"
         )
         self.add_setting("tx_matching", tx_matching_setting)
 
-        rx_matching_options = ["0", "1"]
+        rx_matching_options = ["0", "1", "2", "3", "4"]
         rx_matching_setting = SelectionSetting(
             self.RX_MATCHING, self.ACQUISITION, rx_matching_options, "0", "RX Matching"
         )
