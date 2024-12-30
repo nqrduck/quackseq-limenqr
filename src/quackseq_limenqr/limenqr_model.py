@@ -98,7 +98,7 @@ class LimeNQRModel(SpectrometerModel):
         rx_dwell_time_setting = StringSetting(
             self.RX_DWELL_TIME,
             self.ACQUISITION,
-            "22n",
+            "32n",
             "The time between samples in the receive path.",
         )
         self.add_setting("rx_dwell_time", rx_dwell_time_setting)

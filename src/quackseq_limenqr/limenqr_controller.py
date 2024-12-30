@@ -58,10 +58,15 @@ class LimeNQRController(SpectrometerController):
         measurement_data = self.process_measurement_results(lime, sequence)
 
         # We resample the data to the dwell time settings
-        # measurements = self.resample_data(measurements)
+        measurement_data = self.resample_data(measurement_data)
 
         # Check if the measurement data is valid - the +1 comes from the summing of the phase cycles
         if n_phase_cycles > 1 and measurement_data.tdy.shape[1] != n_phase_cycles + 1:
+            logger.debug(f"Expected {n_phase_cycles + 1} phase cycles, got {measurement_data.tdy.shape[1]}")
+            self.emit_status_message("Error processing measurement data")
+            return None
+        
+        if measurement_data is None:
             self.emit_status_message("Error processing measurement data")
             return None
         
@@ -734,36 +739,50 @@ class LimeNQRController(SpectrometerController):
         """
         return self.limenqr.model.OFFSET_FIRST_PULSE * (1 / lime.srate)
 
-    def resample_data(self, measurements: list):
-        """Resamples the data with the specified dwell time."""
+    def resample_data(self, measurement_data: Measurement) -> Measurement:
+        """Resamples the data with the specified dwell time.
+        
+        Args:
+            measurement_data (Measurement): The measurement data to resample
+
+        Returns:
+            Measurement: The resampled measurement data
+        """
         # Resample the RX data to the dwell time settings
         dwell_time = self.limenqr.model.settings.rx_dwell_time
 
-        dwell_time = UnitConverter.to_float(dwell_time) * 1e6
+        dwell_time = UnitConverter.to_float(dwell_time) *1e6
         logger.debug("Dwell time: %s", dwell_time)
 
-        resampled_measurements = []
+        original_dwell_time = measurement_data.tdx[1] - measurement_data.tdx[0]
+        logger.debug("Original dwell time: %s", original_dwell_time)
 
-        for measurement_data in measurements:
-            logger.debug(f"Last tdx value: {measurement_data.tdx[-1][-1]}")
+        n_data_points = int(measurement_data.tdx[-1] / dwell_time)
+        tdx = np.linspace(0, measurement_data.tdx[-1], n_data_points, endpoint=False)
 
-            if dwell_time:
-                n_data_points = int(measurement_data.tdx[-1][-1] / dwell_time)
-                logger.debug("Resampling to %s data points", n_data_points)
-                tdx = np.linspace(
-                    0, measurement_data.tdx[-1][-1], n_data_points, endpoint=False
+        first_cycle = True
+
+        # We iterate over the second dimension of tdy
+        for tdy_cycle in measurement_data.tdy.T:
+            logger.debug("Resampling to %s data points", n_data_points)
+            tdy = resample(tdy_cycle, n_data_points)
+            #Add empty dimension to make it compatible with the original data
+            tdy = np.expand_dims(tdy, axis=1)
+            logger.debug("Resampled data shape: %s", tdy.shape)
+            logger.debug("Original  data shape: %s", measurement_data.tdy.shape)
+            if first_cycle:
+                measurement_data_resampled = Measurement(
+                    measurement_data.name,
+                    tdx,
+                    tdy,
+                    measurement_data.target_frequency,
+                    frequency_shift=measurement_data.frequency_shift,
+                    IF_frequency=measurement_data.IF_frequency,
                 )
-                tdy = resample(measurement_data.tdy[-1], n_data_points)
-                name = measurement_data.name
-                resampled_measurements.append(
-                    Measurement(
-                        name,
-                        tdx,
-                        tdy,
-                        measurement_data.target_frequency,
-                        frequency_shift=measurement_data.frequency_shift,
-                        IF_frequency=measurement_data.IF_frequency,
-                    )
-                )
+                first_cycle = False
+            else:
+                measurement_data_resampled.add_dataset(tdy)
 
-        return resampled_measurements
+        logger.debug("Resampled data shape: %s", measurement_data_resampled.tdy.shape)
+        return measurement_data_resampled
+    
