@@ -34,22 +34,20 @@ class LimeNQRController(SpectrometerController):
         if lime is None:
             # Emit error message
             logger.error("Error initializing Lime driver")
-            return None
+            return self.return_measurement_error("Error initializing Lime driver")
 
         elif lime.Npulses == 0:
             # Emit error message
             logger.error("No pulses in the pulse sequence")
-            return None
+            return self.return_measurement_error("No pulses in the pulse sequence")
 
         self.setup_lime_parameters(lime, sequence)
         self.setup_temporary_storage(lime)
 
         if not self.perform_measurement(lime):
-            self.emit_status_message("Measurement failed")
-            self.emit_measurement_error(
-                "Error with measurement data. Did you set an RX event?"
+            return self.return_measurement_error(
+                "Error performing measurement. Did you set an RX event?"
             )
-            return -1
 
         n_phase_cycles = sequence.get_n_phase_cycles()
         logger.debug("Expecting %s phase cycles", n_phase_cycles)
@@ -57,19 +55,23 @@ class LimeNQRController(SpectrometerController):
         # We get a list of measurements, one for each phase cycle
         measurement_data = self.process_measurement_results(lime, sequence)
 
+        if measurement_data.tdx is None or measurement_data.tdy is None:
+            return self.return_measurement_error(
+                "Error processing measurement data - the measurement data is None"
+            )
+
         # We resample the data to the dwell time settings
         measurement_data = self.resample_data(measurement_data)
 
         # Check if the measurement data is valid - the +1 comes from the summing of the phase cycles
         if n_phase_cycles > 1 and measurement_data.tdy.shape[1] != n_phase_cycles + 1:
-            logger.debug(f"Expected {n_phase_cycles + 1} phase cycles, got {measurement_data.tdy.shape[1]}")
-            self.emit_status_message("Error processing measurement data")
-            return None
-        
-        if measurement_data is None:
-            self.emit_status_message("Error processing measurement data")
-            return None
-        
+            logger.debug(
+                f"Expected {n_phase_cycles + 1} phase cycles, got {measurement_data.tdy.shape[1]}"
+            )
+            return self.return_measurement_error(
+                "Error processing measurement data - the number of phase cycles does not match the expected number"
+            )
+
         logger.debug(f"Measurement data shape: {measurement_data.tdy.shape}")
 
         return measurement_data
@@ -162,6 +164,18 @@ class LimeNQRController(SpectrometerController):
         logger.debug("RX event begins at: %sµs and ends at: %sµs", rx_begin, rx_stop)
         return self.calculate_measurement_data(lime, rx_begin, rx_stop, readout_scheme)
 
+    def return_measurement_error(self, message: str) -> Measurement:
+        """In case of an error we return a measurement that has no data and the error message as the name.
+
+        Args:
+            message (str): The error message
+
+        Returns:
+            Measurement: The error message as the name
+        """
+        error = Measurement(message, None, None, 0)
+        return error
+
     def calculate_measurement_data(
         self, lime: PyLimeConfig, rx_begin: float, rx_stop: float, readout_scheme: list
     ) -> Measurement:
@@ -217,7 +231,7 @@ class LimeNQRController(SpectrometerController):
 
         except Exception as e:
             logger.error("Error processing measurement result: %s", e)
-            return None
+            return Measurement("Error processing measurement result", None, None, 0)
 
     def find_evaluation_range_indices(
         self, hdf: HDF, rx_begin: float, rx_stop: float
@@ -686,9 +700,11 @@ class LimeNQRController(SpectrometerController):
         rx_stop = rx_begin + rx_duration
 
         # Phase
-        readout_scheme = rx_event.parameters[sequence.RX_READOUT].get_option_by_name(
-            RXReadout.READOUT_SCHEME
-        ).get_value()[0]
+        readout_scheme = (
+            rx_event.parameters[sequence.RX_READOUT]
+            .get_option_by_name(RXReadout.READOUT_SCHEME)
+            .get_value()[0]
+        )
 
         return rx_begin * 1e6, rx_stop * 1e6, readout_scheme
 
@@ -741,7 +757,7 @@ class LimeNQRController(SpectrometerController):
 
     def resample_data(self, measurement_data: Measurement) -> Measurement:
         """Resamples the data with the specified dwell time.
-        
+
         Args:
             measurement_data (Measurement): The measurement data to resample
 
@@ -751,14 +767,15 @@ class LimeNQRController(SpectrometerController):
         # Resample the RX data to the dwell time settings
         dwell_time = self.limenqr.model.settings.rx_dwell_time
 
-        dwell_time = UnitConverter.to_float(dwell_time) *1e6
+        dwell_time = UnitConverter.to_float(dwell_time) * 1e6
         logger.debug("Dwell time: %s", dwell_time)
 
         original_dwell_time = measurement_data.tdx[1] - measurement_data.tdx[0]
         logger.debug("Original dwell time: %s", original_dwell_time)
 
-        n_data_points = int(measurement_data.tdx[-1] / dwell_time)
-        tdx = np.linspace(0, measurement_data.tdx[-1], n_data_points, endpoint=False)
+        new_sampling_frequency = 1.0 / dwell_time  # Dwell time in seconds
+        n_data_points = int(measurement_data.tdx[-1] * new_sampling_frequency)
+        tdx = np.arange(0, n_data_points) * dwell_time
 
         first_cycle = True
 
@@ -766,7 +783,7 @@ class LimeNQRController(SpectrometerController):
         for tdy_cycle in measurement_data.tdy.T:
             logger.debug("Resampling to %s data points", n_data_points)
             tdy = resample(tdy_cycle, n_data_points)
-            #Add empty dimension to make it compatible with the original data
+            # Add empty dimension to make it compatible with the original data
             tdy = np.expand_dims(tdy, axis=1)
             logger.debug("Resampled data shape: %s", tdy.shape)
             logger.debug("Original  data shape: %s", measurement_data.tdy.shape)
@@ -785,4 +802,3 @@ class LimeNQRController(SpectrometerController):
 
         logger.debug("Resampled data shape: %s", measurement_data_resampled.tdy.shape)
         return measurement_data_resampled
-    
