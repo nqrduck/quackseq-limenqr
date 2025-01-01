@@ -12,7 +12,7 @@ from limedriver.hdf_reader import HDF
 
 from nqrduck.helpers.unitconverter import UnitConverter
 from quackseq.spectrometer.spectrometer_controller import SpectrometerController
-from quackseq.measurement import Measurement
+from quackseq.measurement import Measurement, MeasurementError
 from quackseq.pulseparameters import TXPulse, RXReadout
 from quackseq.pulsesequence import QuackSequence
 
@@ -55,13 +55,9 @@ class LimeNQRController(SpectrometerController):
         # We get a list of measurements, one for each phase cycle
         measurement_data = self.process_measurement_results(lime, sequence)
 
-        if measurement_data.tdx is None or measurement_data.tdy is None:
-            return self.return_measurement_error(
-                "Error processing measurement data - the measurement data is None"
-            )
-
-        # We resample the data to the dwell time settings
-        measurement_data = self.resample_data(measurement_data)
+        if isinstance(measurement_data, MeasurementError):
+            logger.debug("Measurement error: %s", measurement_data.error_message)
+            return measurement_data
 
         # Check if the measurement data is valid - the +1 comes from the summing of the phase cycles
         if n_phase_cycles > 1 and measurement_data.tdy.shape[1] != n_phase_cycles + 1:
@@ -71,6 +67,9 @@ class LimeNQRController(SpectrometerController):
             return self.return_measurement_error(
                 "Error processing measurement data - the number of phase cycles does not match the expected number"
             )
+        
+        # We resample the data to the dwell time settings
+        measurement_data = self.resample_data(measurement_data)
 
         logger.debug(f"Measurement data shape: {measurement_data.tdy.shape}")
 
@@ -173,7 +172,8 @@ class LimeNQRController(SpectrometerController):
         Returns:
             Measurement: The error message as the name
         """
-        error = Measurement(message, None, None, 0)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        error = MeasurementError(timestamp, message)
         return error
 
     def calculate_measurement_data(
@@ -230,8 +230,7 @@ class LimeNQRController(SpectrometerController):
             return measurement
 
         except Exception as e:
-            logger.error("Error processing measurement result: %s", e)
-            return Measurement("Error processing measurement result", None, None, 0)
+            return MeasurementError(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"Did you connect the LimeSDR? Error: {e}")
 
     def find_evaluation_range_indices(
         self, hdf: HDF, rx_begin: float, rx_stop: float
