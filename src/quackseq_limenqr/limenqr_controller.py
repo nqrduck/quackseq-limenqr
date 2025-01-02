@@ -159,6 +159,7 @@ class LimeNQRController(SpectrometerController):
             # Instead print the whole acquisition range
             rx_begin = 0
             rx_stop = lime.rectime_secs * 1e6
+            readout_scheme = sequence.get_n_phase_cycles() * [0]
 
         logger.debug("RX event begins at: %sµs and ends at: %sµs", rx_begin, rx_stop)
         return self.calculate_measurement_data(lime, rx_begin, rx_stop, readout_scheme)
@@ -684,7 +685,8 @@ class LimeNQRController(SpectrometerController):
         rx_event = self.find_rx_event(sequence, events)
         logger.debug("Found RX event: %s", rx_event)
         if not rx_event:
-            return None, None
+            logger.error("No RX event found in the pulse sequence")
+            return None, None, None
 
         previous_events_duration = self.calculate_previous_events_duration(
             events, rx_event
