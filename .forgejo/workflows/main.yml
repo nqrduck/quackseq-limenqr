@@ -15,28 +15,25 @@ jobs:
   #      uses: ./.github/workflows/ubuntu-python-package.yml  # use the callable tests job to run tests
 
   deploy:
-
-    runs-on: ubuntu-latest
+    runs-on: docker
+    container:
+      image: node:22-bookworm
 
   #  needs: [test]
 
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Set up Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.11"
+    - uses: actions/checkout@v4
 
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        python -m pip install --upgrade pip
+        apt update
+        apt install -y python3 python3-venv python3-pip
 
     - name: Publish to PyPI
       run: |
-        python -m venv venv
+        python3 -m venv venv
         . ./venv/bin/activate
+        python3 -m pip install --upgrade pip
         pip install -U twine build
         python -m build .
         python -m twine upload --repository pypi --username __token__ --password ${{ secrets.PYPI }} dist/* 

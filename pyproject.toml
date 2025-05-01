@@ -53,8 +53,8 @@ convention = "google"
 
 [project.urls]
 "Homepage" = "https://nqrduck.cool"
-"Bug Tracker" = "https://github.com/nqrduck/quackseq-limenqr/issues"
-"Source Code" = "https://github.com/nqrduck/quackseq-limenqr"
+"Bug Tracker" = "https://git.private.coffee/nqrduck/quackseq-limenqr/issues"
+"Source Code" = "https://git.private.coffee/nqrduck/quackseq-limenqr"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quackseq_limenqr"]
